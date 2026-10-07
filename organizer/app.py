@@ -12,7 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 import uuid
 
 from organizer import __version__
-from organizer.core import execute, forget_history, has_history, preview, undo
+from organizer.core import execute, forget_history, has_history, history_token, preview, undo
 
 
 def downloads_folder() -> Path:
@@ -63,6 +63,7 @@ class OrganizerApp:
         self.plan = None
         self.last_result = None
         self.pending_history = False
+        self.history_revision = None
         self.events = queue.Queue()
         self.worker_thread = None
         self.poll_id = None
@@ -98,11 +99,13 @@ class OrganizerApp:
 
         outer = ttk.Frame(root, padding=(26, 22))
         outer.pack(fill="both", expand=True)
-        ttk.Label(outer, text="下载整理助手", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(outer, text="把散落的下载文件，整理成一目了然的分类。", style="Hint.TLabel").pack(anchor="w", pady=(5, 18))
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(4, weight=1)
+        ttk.Label(outer, text="下载整理助手", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(outer, text="把散落的下载文件，整理成一目了然的分类。", style="Hint.TLabel").grid(row=1, column=0, sticky="w", pady=(5, 18))
 
         folder_card = ttk.Frame(outer, style="Card.TFrame", padding=16)
-        folder_card.pack(fill="x")
+        folder_card.grid(row=2, column=0, sticky="ew")
         ttk.Label(folder_card, text="01  选择要整理的文件夹", style="Card.TLabel").pack(anchor="w", pady=(0, 10))
         folder_row = ttk.Frame(folder_card, style="Card.TFrame")
         folder_row.pack(fill="x")
@@ -112,11 +115,11 @@ class OrganizerApp:
         self.browse_button.pack(side="left", padx=(12, 0))
 
         heading = ttk.Frame(outer)
-        heading.pack(fill="x", pady=(18, 9))
+        heading.grid(row=3, column=0, sticky="ew", pady=(18, 9))
         ttk.Label(heading, text="02  查看整理预览", font=(font, 11, "bold")).pack(side="left")
         ttk.Label(heading, textvariable=self.summary, style="Hint.TLabel").pack(side="right")
         table = ttk.Frame(outer, style="Card.TFrame")
-        table.pack(fill="both", expand=True)
+        table.grid(row=4, column=0, sticky="nsew")
         self.tree = ttk.Treeview(table, columns=("file", "category", "destination", "size"), show="headings", selectmode="browse", height=7)
         for name, label, width in (("file", "文件名", 250), ("category", "分类", 80), ("destination", "整理后的位置", 320), ("size", "大小", 90)):
             self.tree.heading(name, text=label)
@@ -130,10 +133,10 @@ class OrganizerApp:
         self.tree.grid(row=0, column=0, sticky="nsew")
         vertical.grid(row=0, column=1, sticky="ns")
         horizontal.grid(row=1, column=0, sticky="ew")
-        ttk.Label(outer, text="只整理当前层文件；跳过子文件夹、隐藏文件、链接和未完成下载。重名自动编号。", style="Hint.TLabel").pack(anchor="w", pady=(9, 10))
+        ttk.Label(outer, text="只整理当前层文件；跳过子文件夹、隐藏文件、链接和未完成下载。重名自动编号。", style="Hint.TLabel", wraplength=700).grid(row=5, column=0, sticky="w", pady=(9, 10))
 
         actions = ttk.Frame(outer)
-        actions.pack(fill="x")
+        actions.grid(row=6, column=0, sticky="ew")
         self.preview_button = ttk.Button(actions, text="预览分类", command=self.on_preview)
         self.preview_button.pack(side="left")
         self.organize_button = ttk.Button(actions, text="开始整理", style="Primary.TButton", command=self.on_organize)
@@ -142,13 +145,13 @@ class OrganizerApp:
         self.undo_button.pack(side="right")
         self.keep_button = ttk.Button(actions, text="保留结果", command=self.on_keep)
         self.keep_button.pack(side="right", padx=10)
-        ttk.Label(outer, textvariable=self.history_status, style="Hint.TLabel").pack(anchor="w", pady=(9, 10))
+        ttk.Label(outer, textvariable=self.history_status, style="Hint.TLabel", wraplength=700).grid(row=7, column=0, sticky="w", pady=(9, 10))
         self.progress = ttk.Progressbar(outer, mode="determinate", maximum=100)
-        self.progress.pack(fill="x", pady=(0, 8))
-        ttk.Label(outer, textvariable=self.status, wraplength=880).pack(anchor="w")
+        self.progress.grid(row=8, column=0, sticky="ew", pady=(0, 8))
+        ttk.Label(outer, textvariable=self.status, wraplength=700).grid(row=9, column=0, sticky="w")
 
         log_frame = ttk.Frame(outer)
-        log_frame.pack(fill="x", pady=(8, 0))
+        log_frame.grid(row=10, column=0, sticky="ew", pady=(8, 0))
         self.log = tk.Text(log_frame, height=3, font=(font, 9), background="#e5edef", foreground="#47616c", relief="flat", padx=10, pady=7, wrap="word", state="disabled")
         log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=log_scroll.set)
@@ -171,6 +174,7 @@ class OrganizerApp:
 
     def _refresh_history(self):
         try:
+            self.history_revision = history_token(self.history)
             self.pending_history = has_history(self.history)
             self.history_status.set("上次整理可撤销；开始下一批前，请先撤销或选择「保留结果」。" if self.pending_history else "撤销记录保存在本机，关闭软件后仍可使用。")
         except (OSError, ValueError) as exc:
@@ -233,14 +237,16 @@ class OrganizerApp:
     def on_undo(self):
         if self.busy or not self.pending_history:
             return
+        revision = self.history_revision
         if messagebox.askyesno("确认撤销", "将恢复上次整理的文件，可能来自其他文件夹。\n\n已修改的文件和原位置冲突会跳过，未解决记录可重试。是否继续？", parent=self.root):
-            self._run("撤销", lambda: undo(self.history, self._report_progress))
+            self._run("撤销", lambda: undo(self.history, self._report_progress, expected_token=revision))
 
     def on_keep(self):
         if self.busy or not self.pending_history:
             return
+        revision = self.history_revision
         if messagebox.askyesno("保留整理结果", "文件会保持现状，但将清除上次的撤销记录。\n清除后无法通过本工具撤销该批整理。\n\n是否保留结果？", parent=self.root):
-            self._run("保留结果", lambda: forget_history(self.history))
+            self._run("保留结果", lambda: forget_history(self.history, expected_token=revision))
 
     def _poll(self):
         if self.closed:

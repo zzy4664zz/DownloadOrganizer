@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from organizer.core import execute, forget_history, has_history, preview, undo
+from organizer.core import execute, forget_history, has_history, history_token, preview, undo
 
 
 class OrganizerTests(unittest.TestCase):
@@ -221,6 +221,71 @@ class OrganizerTests(unittest.TestCase):
         self.assertEqual(len(result.errors), 1)
         self.assertEqual((self.root / "文档").read_bytes(), b"not a folder")
         self.assertTrue((self.root / "notes.txt").exists())
+
+    def test_stale_acceptance_cannot_delete_newer_history(self):
+        self.file("first.txt")
+        execute(preview(self.root), self.history)
+        old_token = history_token(self.history)
+        undo(self.history)
+        forget_history(self.history)
+        self.file("second.txt")
+        execute(preview(self.root), self.history)
+        new_token = history_token(self.history)
+        with self.assertRaisesRegex(ValueError, "更新"):
+            forget_history(self.history, expected_token=old_token)
+        self.assertEqual(history_token(self.history), new_token)
+        self.assertTrue(has_history(self.history))
+
+    def test_repeated_identical_batches_have_distinct_tokens(self):
+        self.file("notes.txt")
+        execute(preview(self.root), self.history)
+        first = history_token(self.history)
+        undo(self.history)
+        forget_history(self.history)
+        execute(preview(self.root), self.history)
+        self.assertNotEqual(history_token(self.history), first)
+
+    def test_stale_undo_cannot_affect_newer_batch(self):
+        self.file("first.txt")
+        execute(preview(self.root), self.history)
+        token = history_token(self.history)
+        forget_history(self.history)
+        self.file("second.txt")
+        execute(preview(self.root), self.history)
+        with self.assertRaisesRegex(ValueError, "更新"):
+            undo(self.history, expected_token=token)
+        self.assertFalse((self.root / "second.txt").exists())
+        self.assertEqual((self.root / "文档" / "second.txt").read_bytes(), b"original")
+
+    def test_equal_size_source_edit_with_restored_mtime_is_detected(self):
+        source = self.file("notes.txt", b"original")
+        plan = preview(self.root)
+        stamp = source.stat()
+        source.write_bytes(b"modified")
+        os.utime(source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        # Windows 3.12 ctime is creation time; emulate that metadata behavior
+        # on POSIX so this regression exercises the content check everywhere.
+        from dataclasses import replace
+        from organizer.core import _signature
+        plan = replace(plan, items=(replace(plan.items[0], signature=_signature(source)),))
+        result = execute(plan, self.history)
+        self.assertEqual(result.completed, 0)
+        self.assertEqual(len(result.errors), 1)
+        self.assertEqual(source.read_bytes(), b"modified")
+
+    def test_interrupted_undo_recovers_when_category_has_been_removed(self):
+        self.file("notes.txt")
+        execute(preview(self.root), self.history)
+        path = self.history / "last-operation.json"
+        journal = json.loads(path.read_text(encoding="utf-8"))
+        journal["moves"][0]["state"] = "restoring"
+        path.write_text(json.dumps(journal), encoding="utf-8")
+        (self.root / "文档" / "notes.txt").rename(self.root / "notes.txt")
+        (self.root / "文档").rmdir()
+        result = undo(self.history)
+        self.assertEqual(result.completed, 1)
+        self.assertEqual(result.errors, [])
+        self.assertFalse(has_history(self.history))
 
 
 if __name__ == "__main__":

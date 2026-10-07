@@ -90,6 +90,13 @@ class AppTests(unittest.TestCase):
         self.assertTrue(self.app.organize_button.instate(["disabled"]))
         self.assertIn("0", self.app.summary.get())
 
+    def test_footer_is_visible_at_default_window_size(self):
+        self.root.update_idletasks()
+        footer_bottom = self.app.log.winfo_rooty() + self.app.log.winfo_height()
+        window_bottom = self.root.winfo_rooty() + self.root.winfo_height()
+        self.assertLessEqual(footer_bottom, window_bottom)
+        self.assertTrue(self.app.log.winfo_ismapped())
+
     def test_undo_conflict_shown_and_retry_remains_available(self):
         source = self.folder / "notes.txt"
         source.write_bytes(b"original")
@@ -105,6 +112,23 @@ class AppTests(unittest.TestCase):
         self.assertEqual(len(self.app.last_result.errors), 1)
         self.assertIn("未覆盖", self.app.log.get("1.0", "end"))
         self.assertFalse(self.app.undo_button.instate(["disabled"]))
+
+    def test_stale_window_cannot_clear_other_windows_new_batch(self):
+        from organizer.core import execute, forget_history, has_history, preview
+        (self.folder / "first.txt").write_bytes(b"first")
+        self.app.on_preview()
+        self.wait()
+        with patch("organizer.app.messagebox.askyesno", return_value=True):
+            self.app.on_organize()
+        self.wait()
+        forget_history(self.history)
+        (self.folder / "second.txt").write_bytes(b"second")
+        execute(preview(self.folder), self.history)
+        with patch("organizer.app.messagebox.askyesno", return_value=True):
+            self.app.on_keep()
+        self.wait()
+        self.assertTrue(has_history(self.history))
+        self.assertIn("更新", self.app.log.get("1.0", "end"))
 
 
 class DefaultsTests(unittest.TestCase):

@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import stat
 import tempfile
+import uuid
 from typing import Callable
 
 
@@ -34,6 +35,7 @@ class Move:
     source: Path
     destination: Path
     signature: tuple
+    sha256: str
 
 
 @dataclass(frozen=True)
@@ -108,7 +110,11 @@ def preview(folder: Path) -> Plan:
             continue
         category = _category(source.name)
         destination = _available(folder / category, source.name, reserved.setdefault(category, set()))
-        moves.append(Move(source, destination, _signature(source)))
+        signature = _signature(source)
+        checksum = _digest(source)
+        if _signature(source) != signature:
+            raise ValueError(f"文件正在变化，请等待下载或编辑完成后再预览：{source.name}")
+        moves.append(Move(source, destination, signature, checksum))
     return Plan(folder, tuple(moves), skipped)
 
 
@@ -187,10 +193,24 @@ def has_history(history: Path) -> bool:
     return bool(journal and any(m["state"] in {"pending", "moved", "restoring"} for m in journal["moves"]))
 
 
-def forget_history(history: Path):
+def history_token(history: Path) -> str | None:
+    """Snapshot revision, including invalid journals that a user may clear."""
+    try:
+        return _digest(Path(history) / JOURNAL)
+    except FileNotFoundError:
+        return None
+
+
+def _check_token(history: Path, expected_token: str | None):
+    if expected_token is not None and history_token(history) != expected_token:
+        raise ValueError("撤销记录已被其他窗口更新，请核对最新记录后重试")
+
+
+def forget_history(history: Path, *, expected_token: str | None = None):
     """Explicitly accept the last batch; this does not change organized files."""
     history = Path(history)
     with _lock(history):
+        _check_token(history, expected_token)
         (history / JOURNAL).unlink(missing_ok=True)
 
 
@@ -222,7 +242,7 @@ def execute(plan: Plan, history: Path, progress: Progress | None = None) -> Resu
         if has_history(history):
             raise ValueError("请先撤销上次整理，或选择保留结果并清除撤销记录")
         _directory(plan.folder)
-        journal = {"version": 1, "folder": str(plan.folder), "moves": []}
+        journal = {"version": 1, "batch": uuid.uuid4().hex, "folder": str(plan.folder), "moves": []}
         for index, item in enumerate(plan.items, 1):
             record = None
             try:
@@ -231,7 +251,7 @@ def execute(plan: Plan, history: Path, progress: Progress | None = None) -> Resu
                 if _signature(item.source) != item.signature:
                     raise ValueError("文件在预览后已更改，请重新预览")
                 checksum = _digest(item.source)
-                if _signature(item.source) != item.signature:
+                if _signature(item.source) != item.signature or checksum != item.sha256:
                     raise ValueError("文件在检查时已更改，请重新预览")
                 _directory(item.destination.parent, create=True)
                 destination = _available(item.destination.parent, item.source.name)
@@ -254,11 +274,12 @@ def execute(plan: Plan, history: Path, progress: Progress | None = None) -> Resu
     return result
 
 
-def undo(history: Path, progress: Progress | None = None) -> Result:
+def undo(history: Path, progress: Progress | None = None, *, expected_token: str | None = None) -> Result:
     """Restore only unchanged files; retain unresolved conflicts for retry."""
     history = Path(history)
     result = Result()
     with _lock(history):
+        _check_token(history, expected_token)
         journal = _read(history)
         if journal is None:
             return result
@@ -269,12 +290,12 @@ def undo(history: Path, progress: Progress | None = None) -> Result:
             source = folder / record["name"]
             destination = folder / record["category"] / record["destination"]
             try:
-                _directory(destination.parent)
                 if not os.path.lexists(destination) and record["state"] in {"pending", "restoring"} and os.path.lexists(source):
-                    _signature(source)
-                    if _digest(source) != record["sha256"]:
+                    signature = _signature(source)
+                    if _digest(source) != record["sha256"] or _signature(source) != signature:
                         raise ValueError("原文件已更改，无法确认未完成操作")
                 else:
+                    _directory(destination.parent)
                     signature = _signature(destination)
                     if _digest(destination) != record["sha256"] or _signature(destination) != signature:
                         raise ValueError("整理后的文件已更改，已跳过")

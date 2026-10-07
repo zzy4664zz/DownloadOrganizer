@@ -13,3 +13,15 @@ Publication diagnosis: native Git read succeeds. GitHub API and gh auth are forb
 Task 2: complete — 24/24 full-suite tests passed with a real Xorg display; startup smoke check is next. GUI tests exercise real preview, move, restart, persistent undo, cancellation, error reporting, and conflicts. Windows launcher and release pipelines are ready for platform validation.
 
 Diagnosis: Tcl_AsyncDelete in the first GUI suite was caused by destroyed Tk interpreters surviving in cycles until a later worker triggered GC. Test teardown now collects those cycles on the creating thread. The UI joins the completed worker before permitting close so the worker task releases GUI references first.
+
+Final independent review: gpt-6-astra reviewed core, UI, launcher and workflow. Three P2 findings entered one fix pass.
+
+Final: fixed stale-instance history deletion — core stale-token and GUI stale-window tests RED→GREEN. SHA-256 journal revisions plus random batch IDs guard undo/acceptance under the shared lock, including identical repeated batches.
+
+Final: fixed Windows timestamp-preserving source changes — preview captures SHA-256, execution compares contents; equal-length changed content with restored timestamps and emulated Windows metadata RED→GREEN.
+
+Final: fixed interrupted undo after an empty category is removed — verify source-only recovery before checking category; regression RED→GREEN.
+
+Final: fixed default-window footer clipping — screenshot exposed unmapped log; real-widget visibility test RED→GREEN after switching to a weighted grid.
+
+Final verification: 31/31 tests pass with Python 3.13.5 / Tk 8.6 and actual Xorg display; source smoke check passes. No deferred reviewer findings. Cloud Tk 9 lacks Xft-style CJK rendering, so visual verification uses the system Tk 8.6. Native Windows CI and exe publication remain pending until pushed tag workflow completes.
