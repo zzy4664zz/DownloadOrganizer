@@ -1,0 +1,36 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Linux core and real GUI tests
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m unittest discover -s tests -v
+      - name: Windows core and real GUI tests
+        if: runner.os == 'Windows'
+        run: python -m unittest discover -s tests -v
+      - name: Linux startup smoke check
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python main.py --smoke-test
+      - name: Windows launcher smoke check
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: start.bat --smoke-test

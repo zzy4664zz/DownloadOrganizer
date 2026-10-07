@@ -1,0 +1,73 @@
+name: Windows Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run core and desktop integration tests
+        run: python -m unittest discover -s tests -v
+      - name: Verify source startup
+        run: python main.py --smoke-test
+      - name: Install packaging tool
+        run: python -m pip install pyinstaller==6.16.0
+      - name: Build Windows executable
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name DownloadOrganizer main.py
+      - name: Verify packaged window opens
+        run: python -c "import subprocess; subprocess.run(['dist/DownloadOrganizer.exe', '--smoke-test'], check=True, timeout=45)"
+      - name: Create source archive and checksums
+        shell: pwsh
+        run: |
+          git archive --format=zip --prefix=DownloadOrganizer/ --output=dist/DownloadOrganizer-source.zip HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Source archive failed' }
+          $assets = @('dist/DownloadOrganizer.exe', 'dist/DownloadOrganizer-source.zip')
+          $lines = foreach ($asset in $assets) {
+            $hash = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $(Split-Path $asset -Leaf)"
+          }
+          $lines | Set-Content dist/SHA256SUMS.txt -Encoding ascii
+      - name: Retain build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DownloadOrganizer-Windows
+          path: |
+            dist/DownloadOrganizer.exe
+            dist/DownloadOrganizer-source.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          @'
+          下载整理助手：适用于 Windows 10 / 11 的中文桌面工具。
+
+          下载 DownloadOrganizer.exe 后双击运行，无需安装 Python。
+          支持分类预览、确认整理、重名自动编号、关闭后撤销。
+          文件均保存在本机。先用少量副本试用；已修改或冲突的文件不会被覆盖。
+
+          此版本已在 Windows 上运行核心测试、桌面全流程测试及打包程序启动检查。
+          SHA256SUMS.txt 提供程序和源码压缩包的校验值。
+          '@ | Set-Content release-notes.md -Encoding utf8
+          gh release view "$env:RELEASE_TAG" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload "$env:RELEASE_TAG" dist/DownloadOrganizer.exe dist/DownloadOrganizer-source.zip dist/SHA256SUMS.txt --clobber
+          } else {
+            gh release create "$env:RELEASE_TAG" dist/DownloadOrganizer.exe dist/DownloadOrganizer-source.zip dist/SHA256SUMS.txt --verify-tag --title "下载整理助手 $env:RELEASE_TAG" --notes-file release-notes.md
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub Release publication failed' }
