@@ -25,3 +25,5 @@ Final: fixed interrupted undo after an empty category is removed — verify sour
 Final: fixed default-window footer clipping — screenshot exposed unmapped log; real-widget visibility test RED→GREEN after switching to a weighted grid.
 
 Final verification: 31/31 tests pass with Python 3.13.5 / Tk 8.6 and actual Xorg display; source smoke check passes. No deferred reviewer findings. Cloud Tk 9 lacks Xft-style CJK rendering, so visual verification uses the system Tk 8.6. Native Windows CI and exe publication remain pending until pushed tag workflow completes.
+
+Task 3: complete — main pushed by native HTTPS Git (non-force fast-forward); annotated v1.0.0 points to 4fab131. Linux/Windows CI run 37576760036 succeeds. Windows release run 37576788256 succeeds, including real desktop tests, batch startup in CI, compiled-exe smoke check and release creation. Public Release assets verified; downloaded 11,625,434-byte x64 exe matches published SHA-256. Documentation follow-up changes only describe verified results; release functional source remains the tagged commit.

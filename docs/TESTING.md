@@ -39,4 +39,12 @@ xvfb-run -a python3 main.py --smoke-test
 
 审查发现并通过失败→修复→通过的测试验证：旧窗口不能清除其他窗口的较新撤销记录；相同大小且恢复修改时间的源文件内容变化仍会跳过；中断撤销后分类空目录被删除仍可恢复；默认窗口底部日志完整显示。
 
-Windows 本机和最终 exe 结果以 [GitHub Actions](https://github.com/zzy4664zz/-/actions) 中的对应提交和标签运行结果为准；本地 Linux 结果不代表原生 Windows 测试已经完成。
+## 已发布版本 v1.0.0
+
+- 构建源码提交：`4fab1315aae370b8363da06dcf121c918087567f`。
+- [Linux / Windows CI](https://github.com/zzy4664zz/-/actions/runs/37576760036)：两个平台均成功，Windows 启动脚本检查通过。
+- [Windows Release](https://github.com/zzy4664zz/-/actions/runs/37576788256)：成功。核心和桌面集成测试、源码启动、PyInstaller 构建、实际打包窗口启动、校验文件生成及发布步骤全部通过。
+- [Release](https://github.com/zzy4664zz/-/releases/tag/v1.0.0) 已包含 exe、源码 ZIP 及 SHA256SUMS.txt。
+- 从公开 Release 下载的 exe 已验证为 x86-64 Windows GUI 程序，11,625,434 字节；SHA-256 与发布的校验文件一致：`b996d3e7b896a4e078096cd4d312f427aafbe738106d780c7f065d5dd9a80145`。
+
+自动验证不覆盖全部 Windows 显示缩放、网络盘或云同步软件组合；这些仍按上面的手工检查流程验证。

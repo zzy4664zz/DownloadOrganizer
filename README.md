@@ -1,12 +1,14 @@
 # 下载整理助手
 
-一个适用于 **Windows 10 / 11** 的中文桌面小工具。将下载文件夹里的文件分类整理，先看预览，再确认移动，支持关闭软件后撤销。
+一个适用于 **Windows 10 / 11（x64）** 的中文桌面小工具。将下载文件夹里的文件分类整理，先看预览，再确认移动，支持关闭软件后撤销。
 
 ## 使用方法
 
 ### 方式一：下载桌面程序
 
-在 [GitHub Releases](https://github.com/zzy4664zz/-/releases) 下载 **DownloadOrganizer.exe**，双击运行，无需安装 Python。版本标签触发 Windows 构建，只有测试和打包检查通过后才会创建 Release；如果页面暂时没有程序，可先使用源码方式。
+**[下载 DownloadOrganizer.exe · v1.0.0](https://github.com/zzy4664zz/-/releases/download/v1.0.0/DownloadOrganizer.exe)**，双击运行，无需安装 Python。
+
+v1.0.0 已通过 Windows 核心测试、桌面全流程测试和打包程序启动检查。[版本说明与校验文件](https://github.com/zzy4664zz/-/releases/tag/v1.0.0)。
 
 这是未签名的个人开源程序，Windows 可能显示 SmartScreen 提示。只从本仓库的 Release 下载，并核对同版本的 `SHA256SUMS.txt`；不要关闭系统保护。可用 PowerShell `Get-FileHash .\DownloadOrganizer.exe -Algorithm SHA256` 核对。
 
